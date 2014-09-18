@@ -95,8 +95,7 @@ if __name__ == '__main__':
 
     global Verbose
 
-    pairs = [ "h/help", "v/verbose",
-              "o:/output=", ]
+    pairs = [ "h/help", "v/verbose", ]
 
     shortopts = "".join([ pair.split("/")[0] for pair in pairs ])
     longopts = [ pair.split("/")[1] for pair in pairs ]
