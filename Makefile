@@ -20,10 +20,12 @@ SSH = ssh $(USER)@paws-server
 all: fetch process
 
 fetch:
+	mkdir -p data
 	$(SSH) -t \
 	  "sudo cp /var/log/messages* ~/ && sudo chown $(USER):$(USER) ~/messages*"
 	$(SSH) \
-	  tar czvf - /home/$(USER)/messages* | tar xvzf - --strip-components 2
+	  tar czvf - /home/$(USER)/messages* | \
+	  ( cd data ; tar xvzf - --strip-components 2 )
 
 process:
-	./vpn-users.py messages-* messages | sort -n > vpn-logins.csv
+	./vpn-users.py data/messages-* data/messages | sort -n > data/vpn-logins.csv
