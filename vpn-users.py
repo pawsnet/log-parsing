@@ -33,9 +33,11 @@ class Session:
 
     def __str__(self):
         if self.state == State.Active:
-            rv = "%.0f,  %s,  %s, %s,%s" % (
+            rv = '%.0f, %s,  %s, %s,%s, "%s"' % (
                 time.mktime(self.timestamp),
-                self.username, self.locip, self.remip, self.rempt)
+                self.username, self.locip, self.remip, self.rempt,
+                time.asctime(self.timestamp)
+            )
         return rv
 
 def process(filenames):
