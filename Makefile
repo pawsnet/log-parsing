@@ -28,4 +28,11 @@ fetch:
 	  ( cd data ; tar xvzf - --strip-components 2 )
 
 process:
-	./vpn-users.py data/messages-* data/messages | sort -n > data/vpn-logins.csv
+	./vpn-users.py $(VERBOSE) data/messages-* data/messages | \
+		sort -n -t "," -k 1,2 > data/vpn-logins$(VERBOSE).csv
+
+test:
+	./vpn-users.py data/messages-* data/messages
+
+clean:
+	$(RM) data/vpn-logins*
