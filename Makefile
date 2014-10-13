@@ -49,7 +49,12 @@ process-paws2-uptimes: # PAWS2 router availability
 	  data/paws2-uptimes/logdata.clean.sorted.csv
 	./availaility.py COOKED >| data/paws2-uptimes/uptimes.csv
 
-process-paws2-pcap: # Extract URLs from PCAPs
+process-paws2-pcap: # Process PCAP files, remotely \
+	process-paws2-pcap-names \
+	process-paws2-pcap-connections \
+	process-paws2-pcap-urls \
+
+process-paws2-pcap-names: # Extract URLs from PCAPs
 	$(RM) data/paws2-pcap/names
 	$(SSHPAWS) -t \
 	  'for pcap in $$(ls -1tr ~paws/tcpdump/tun0_*pcap*) ; do \
@@ -62,7 +67,8 @@ process-paws2-pcap: # Extract URLs from PCAPs
 	  done' \
 	>> data/paws2-pcap/names
 
-	$(RM) data/paws2-pcap/urls
+process-paws2-pcap-connections: # Extract conversation data
+	$(RM) data/paws2-pcap/connections
 	$(SSHPAWS) -t \
 	  'for pcap in $$(ls -1tr ~paws/tcpdump/tun0_*pcap*) ; do \
 		echo "# $${pcap}" ;\
@@ -71,8 +77,26 @@ process-paws2-pcap: # Extract URLs from PCAPs
 		  -e frame.number -e frame.time_epoch \
 		  -e ip.src -e tcp.srcport -e udp.srcport \
 		  -e ip.dst -e tcp.dstport -e udp.dstport \
+		  -e ip.len -e tcp.flags \
 		  -e http.host -e http.request.uri \
 		  -E header=y -E separator=, -E quote=n -E occurrence=f ;\
+	  done' \
+	>> data/paws2-pcap/connections
+
+process-paws2-pcap-urls: # Extract HTTP URL data
+	$(RM) data/paws2-pcap/urls
+	$(SSHPAWS) -t \
+	   'for pcap in $$(ls -1tr ~paws/tcpdump/tun0_*pcap*) ; do \
+		echo "# $${pcap}" ;\
+		/usr/sbin/tshark -r $${pcap} -R "http.response or http.request" \
+		  -2 -T fields \
+		  -e frame.time_epoch \
+		  -e ip.src -e tcp.srcport \
+		  -e ip.dst -e tcp.dstport \
+		  -e http.host -e http.request.uri \
+		  -e http.content_type -e http.content_length \
+		  -e http.location -e http.referer \
+		  -E separator="|" -E quote=n -E occurrence=f ;\
 	  done' \
 	>> data/paws2-pcap/urls
 
