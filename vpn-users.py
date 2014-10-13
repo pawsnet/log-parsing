@@ -17,15 +17,24 @@
 # Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307,
 # USA.
 
-import sys, getopt, re, time
+import sys, getopt, re, time, os
 from enum import Enum
 
 TIMEOUT = 10 * 60
+IP4_SRE = "\d{1,3}[.]\d{1,3}[.]\d{1,3}[.]\d{1,3}"
 
 class State(Enum):
     Invalid = 0
     Opening = 1
     Active = 2
+
+def dump_session(username, sessions, reason):
+    session = sessions[username]
+    if Verbose: print(session, ",", reason)
+    else:
+        print(session)
+    del sessions[username]
+    return sessions
 
 class Session:
     def __init__(self, open_ts, username):
@@ -35,30 +44,79 @@ class Session:
 
     def __str__(self):
         if self.state == State.Active:
-            rv = '%.0f,%.0f,%.0f, %s,  %s, %s,%s, "%s","%s"' % (
-                time.mktime(self.open_ts), time.mktime(self.refresh_ts),
+            rv = '%s, %.0f, %0.f' % (
+                self.username, time.mktime(self.open_ts),
                 time.mktime(self.refresh_ts)-time.mktime(self.open_ts),
-                self.username, self.locip, self.remip, self.rempt,
-                time.asctime(self.open_ts), time.asctime(self.refresh_ts)
             )
-        return rv
+            if Verbose:
+                rv += ',  %s, %s,%s, "%s","%s"' % (
+                    self.locip, self.remip, self.rempt,
+                    time.asctime(self.open_ts), time.asctime(self.refresh_ts)
+                )
+            return rv
 
-def process(filenames):
+def process_details(fn, sessions={}):
+    # Acct-Session-Id = "xxxxxxxxxxxx"
+    sessionid_re = re.compile('Acct-Session-Id = "(?P<sessionid>[0-9A-F]+)"')
+
+    # User-Name = "xxxxx"
+    username_re = re.compile('User-Name = "(?P<username>\w)"')
+
+    # Acct-Status-Type = Start|Stop
+    # Calling-Station-Id = ipaddr-of-ap
+    remip_re = re.compile('Calling-Station-Id = "(?P<remip>%s)"' % (IP4_SRE,))
+
+    # Frame-IP-Address = ipaddr-in-traces
+    locip_re = re.compile('Frame-IP-Address = "(?P<locip>%s)"' % (IP4_SRE,))
+
+    ## stop only
+    # Timestamp = starttime-as-unixt
+    ts_re = re.compile("Timestamp = (?P<timestamp>\d+)")
+
+    # Acct-Output-Octets, Acct-Input-Octets, Acct-Session-Time = secs
+    # end == \n\n
+    rs_re = re.compile("^$")
+
+    with open(fn) as f:
+        for line in map(lambda l:l.strip(), f.readlines()):
+
+            if rs_re.match(line):
+                session = Session(timestamp, username)
+
+            m = ts_re.match(line)
+            if m:
+                timestamp = time.gmtime(m.group("timestamp"))
+
+            m = sessionid_re.match(line)
+            if m:
+                sessionid = m.group("sessionid")
+
+            m = username_re.match(line)
+            if m:
+                username = m.group("username")
+
+            m = remip_re.match(line)
+            if m:
+                remip = m.group("remip")
+
+            m = locip_re.match(line)
+            if m:
+                locip = m.group("locip")
+
+def process_messages(fn, sessions={}):
 
     ts_format = "%Y %b %d %H:%M:%S"
-
-    ip4_sre = "\d{1,3}[.]\d{1,3}[.]\d{1,3}[.]\d{1,3}"
 
     vpn_re = re.compile(".*openvpn.*")
     login_re = re.compile(
         ".*authentication succeeded for username '(?P<username>\w+)'.*")
     ipaddr_re = re.compile(
         ".*MULTI: Learn: (?P<locip>%s) -> (?P<username>\w+)/(?P<remip>%s):(?P<rempt>\d+)$"
-        %(ip4_sre, ip4_sre))
+        %(IP4_SRE, IP4_SRE))
     timeout_re = re.compile(
-        "(?P<username>\w+)/(?P<remip>%s):(?P<rempt>\d+) \[\w+\] Inactivity timeout" % (ip4_sre,))
+        "(?P<username>\w+)/(?P<remip>%s):(?P<rempt>\d+) \[\w+\] Inactivity timeout" % (IP4_SRE,))
     clientexit_re = re.compile(
-        "(?P<username>\w+)/(?P<remip>%s):(?P<rempt>\d+) SIGTERM\[soft,remote-exit\] received, client-instance exiting" % (ip4_sre,))
+        "(?P<username>\w+)/(?P<remip>%s):(?P<rempt>\d+) SIGTERM\[soft,remote-exit\] received, client-instance exiting" % (IP4_SRE,))
 
     # ...client-instance exiting$
     # ...client-instance restarting$
@@ -68,91 +126,83 @@ def process(filenames):
 
     ## initialise local state
     session = None
-    sessions = {}
 
-    for fn in filenames:
-        with open(fn) as f:
-            for line in map(lambda l:l.strip(), f.readlines()):
+    with open(fn) as f:
+        for line in map(lambda l:l.strip(), f.readlines()):
 
-                ## ignore if not a vpn line
-                if not vpn_re.match(line): continue
+            ## ignore if not a vpn line
+            if not vpn_re.match(line): continue
 
-                ## what time is it?
-                timestamp, line = line[:15], line[40:].strip()
-                timestamp = time.strptime("2014 "+timestamp, ts_format)
+            ## what time is it?
+            timestamp, line = line[:15], line[40:].strip()
+            timestamp = time.strptime("2014 "+timestamp, ts_format)
 
-                ## is this a session completing opening?
-                m = ipaddr_re.match(line)
-                if m:
-                    username = m.group("username")
-                    if username not in sessions: continue
-                    session = sessions[username]
+            ## is this a session completing opening?
+            m = ipaddr_re.match(line)
+            if m:
+                username = m.group("username")
+                if username not in sessions: continue
+                session = sessions[username]
 
-                    (locip, remip, rempt) = (
-                        m.group("locip"), m.group("remip"), m.group("rempt"))
+                (locip, remip, rempt) = (
+                    m.group("locip"), m.group("remip"), m.group("rempt"))
 
-                    if session.state != State.Active:
+                if session.state != State.Active:
+                    session.locip = locip
+                    session.remip = remip
+                    session.rempt = rempt
+                    session.state = State.Active
+
+                else:
+                    session.refresh_ts = timestamp
+                    if (locip, remip, rempt) != (
+                            session.locip, session.remip, session.rempt
+                    ):
+                        ## change of remote port; new device?
+                        if Verbose: print(session, ", new-device")
                         session.locip = locip
                         session.remip = remip
                         session.rempt = rempt
-                        session.state = State.Active
-
-                    else:
+                        session.open_ts = timestamp
                         session.refresh_ts = timestamp
-                        if Verbose:
-                            if (locip, remip, rempt) != (
-                                    session.locip, session.remip, session.rempt
-                            ):
-                                ## change of remote port; new device?
-                                print(session, ", new-device")
-                                session.locip = locip
-                                session.remip = remip
-                                session.rempt = rempt
-                                session.open_ts = timestamp
-                                session.refresh_ts = timestamp
 
+                sessions[username] = session
+                continue
+
+            ## is this a session timing out?
+            m = timeout_re.match(line)
+            if m:
+                username = m.group("username")
+                if username not in sessions: continue
+                session = sessions[username]
+                ## best estimate we have for when session went idle
+                session.refresh_ts = timestamp
+                sessions = dump_session(username, sessions, "timeout")
+                continue
+
+            ## is this a session just closing?
+            m = clientexit_re.match(line)
+            if m:
+                username = m.group("username")
+                if username not in sessions: continue
+
+                session = sessions[username]
+                ## best estimate we have for when session went idle
+                session.refresh_ts = timestamp
+
+                sessions = dump_session(username, sessions, "client-exit")
+                continue
+
+            ## is this a new session?
+            m = login_re.match(line)
+            if m:
+                username = m.group("username")
+                if username in sessions: session = sessions[username]
+                else:
+                    session = Session(timestamp, username)
                     sessions[username] = session
-                    continue
 
-                ## is this a session timing out?
-                m = timeout_re.match(line)
-                if m:
-                    username = m.group("username")
-                    if username not in sessions: continue
-                    session = sessions[username]
-
-                    ## best estimate we have for when session went idle
-                    session.refresh_ts = timestamp ## time.gmtime(time.mktime(timestamp) - TIMEOUT)
-
-                    print(session, ", timeout")
-                    del sessions[username]
-                    continue
-
-                ## is this a session just closing?
-                m = clientexit_re.match(line)
-                if m:
-                    username = m.group("username")
-                    if username not in sessions: continue
-                    session = sessions[username]
-
-                    ## best estimate we have for when session went idle
-                    session.refresh_ts = timestamp ## time.gmtime(time.mktime(timestamp) - TIMEOUT)
-                    print(session, ", client-exit")
-                    del sessions[username]
-                    continue
-
-                ## is this a new session?
-                m = login_re.match(line)
-                if m:
-                    username = m.group("username")
-                    if username in sessions: session = sessions[username]
-                    else:
-                        session = Session(timestamp, username)
-                        sessions[username] = session
-
-    for session in sessions.values():
-        session.refresh_ts = timestamp
-        print(session, ", eof")
+    return sessions
 
 if __name__ == '__main__':
 
@@ -174,4 +224,12 @@ if __name__ == '__main__':
             else: raise Exception("unhandled option")
     except Exception as err: die_with_usage(err, 3)
 
-    process(args)
+    sessions = {}
+    for filename in args:
+        fn = os.path.basename(filename)
+        if fn.startswith("messages"):
+            sessions = process_messages(filename, sessions)
+        elif fn.startswith("detail"):
+            sessions = process_details(filename, sessions)
+        else:
+            BARF
