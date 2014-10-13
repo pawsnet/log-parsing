@@ -19,20 +19,29 @@ SSH = ssh $(USER)@paws-server
 
 all: fetch process
 
-fetch:
+fetch: fetch-paws2-vpn
+
+fetch-paws2-vpn:
 	mkdir -p data
 	$(SSH) -t \
 	  "sudo cp /var/log/messages* ~/ && sudo chown $(USER):$(USER) ~/messages*"
 	$(SSH) \
 	  tar czvf - /home/$(USER)/messages* | \
-	  ( cd data ; tar xvzf - --strip-components 2 )
+	  ( cd data/paws2-vpn ; tar xvzf - --strip-components 2 )
+	$(SSH) \
+	  $(RM) ~/messages*
 
-process:
+process: process-paws2-vpn process-paws2-uptimes
+
+process-paws2-vpn:
 	./vpn-users.py $(VERBOSE) data/messages-* data/messages | \
-		sort -n -t "," -k 1,2 > data/vpn-logins$(VERBOSE).csv
+	  sort -n -t "," -k 1,2 > data/vpn-logins$(VERBOSE).csv
 
-test:
-	./vpn-users.py data/messages-* data/messages
+process-paws2-uptimes:
+	 ./availaility.py RAW
+	sort -n -t" " -k 3 logdata.clean.csv >| \
+	  data/paws2-uptimes/logdata.clean.sorted.csv
+	./availaility.py COOKED >| data/paws2-uptimes/uptimes.csv
 
 clean:
-	$(RM) data/vpn-logins*
+	$(RM) data/paws2-vpn/vpn-logins*.csv data/paws2-uptimes/uptimes.csv
