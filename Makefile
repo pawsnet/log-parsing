@@ -18,7 +18,9 @@
 help:
 	@egrep "^.*: " Makefile
 
+SHELL = /usr/bin/env bash
 SSH = ssh $(USER)@paws-server
+SSHPAWS = ssh paws@paws-server
 
 all: fetch process
 
@@ -34,7 +36,7 @@ fetch-paws2-vpn: # Fetch PAWS2 VPN logs
 	$(SSH) \
 	  $(RM) ~/messages*
 
-process: process-paws2-vpn process-paws2-uptimes
+process: process-paws2-vpn process-paws2-uptimes process-paws2-pcap
 
 process-paws2-vpn: # PAWS2 citizen usage
 	./vpn-users.py $(VERBOSE) \
@@ -46,6 +48,33 @@ process-paws2-uptimes: # PAWS2 router availability
 	sort -n -t" " -k 3 logdata.clean.csv >| \
 	  data/paws2-uptimes/logdata.clean.sorted.csv
 	./availaility.py COOKED >| data/paws2-uptimes/uptimes.csv
+
+process-paws2-pcap: # Extract URLs from PCAPs
+	$(RM) data/paws2-pcap/names
+	$(SSHPAWS) -t \
+	  'for pcap in $$(ls -1tr ~paws/tcpdump/tun0_*pcap*) ; do \
+		echo "# $${pcap}" ;\
+		/usr/sbin/tshark -r $${pcap} \
+		  -2 -T fields -R "udp.srcport==53" \
+		  -e frame.number -e frame.time_epoch -e ip.src -e ip.dst \
+		  -e dns.qry.name -e dns.resp.name -e dns.a \
+		  -E separator=, -E quote=n -E occurrence=f ;\
+	  done' \
+	>> data/paws2-pcap/names
+
+	$(RM) data/paws2-pcap/urls
+	$(SSHPAWS) -t \
+	  'for pcap in $$(ls -1tr ~paws/tcpdump/tun0_*pcap*) ; do \
+		echo "# $${pcap}" ;\
+		/usr/sbin/tshark -r $${pcap} \
+		  -2 -T fields \
+		  -e frame.number -e frame.time_epoch \
+		  -e ip.src -e tcp.srcport -e udp.srcport \
+		  -e ip.dst -e tcp.dstport -e udp.dstport \
+		  -e http.host -e http.request.uri \
+		  -E header=y -E separator=, -E quote=n -E occurrence=f ;\
+	  done' \
+	>> data/paws2-pcap/urls
 
 clean: # remove droppings
 	$(RM) data/paws2-vpn/vpn-logins*.csv data/paws2-uptimes/uptimes.csv
