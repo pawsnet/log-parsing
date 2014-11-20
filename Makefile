@@ -95,6 +95,10 @@ process-paws2-pcap-connections: # Extract conversation data
 	  done >> paws2-connections.txt'
 	scp paws@paws-server:~/paws2-connections.txt data/paws2-pcap
 
+process-paws2-pcap-flows: # Convert conversations to flows
+	./flows.py data/paws2-pcap/paws2-connections.txt >| \
+		data/paws2-pcap/paws2-flows.txt
+
 process-paws2-pcap-urls: # Extract HTTP URL data
 	$(SSHPAWS) -t \
 	   '$(RM) paws2-urls.txt; \
