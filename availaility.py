@@ -23,8 +23,8 @@ TIMEOUT = 600
 if __name__ == '__main__':
 
     if sys.argv[1] == "RAW":
-        filename = DIR+"logdata.csv"
-        outputf = open(DIR+"logdata.clean.csv", "w")
+        filename = DIR+"/logdata.csv"
+        outputf = open(DIR+"/logdata.clean.csv", "w")
         with open(filename) as f:
             for line in [ l.strip() for l in f.readlines()[1:] ]:
                 (pawsid, _, ipaddr, observed) = line.split(",")
@@ -43,7 +43,7 @@ if __name__ == '__main__':
         ## after
         ## $ sort -n -t" " -k 3 logdata.clean.csv > logdata.clean.sorted.csv
         obs = {}
-        filename = DIR+"logdata.clean.sorted.csv"
+        filename = DIR+"/logdata.clean.sorted.csv"
         with open(filename) as f:
             for line in [ l.strip() for l in f.readlines()[1:] ]:
                 (pawsid, ipaddr, timestamp) = line.split(",")
