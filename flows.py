@@ -43,7 +43,7 @@ class Flow:
 
 FLOWS    = {}
 TIMEOUT  = 5*60                 # seconds
-N = 0
+N        = 0
 
 def err(s):
     print(s, flush=True, file=sys.stderr)
@@ -57,73 +57,87 @@ if __name__ == '__main__':
 
     conns = sys.argv[1]
 
-    with fopen(conns) as f:
-        for line in f:
-            line = line.strip()
-            if line.startswith("#"):
-                filename = line.split()[1]
-                continue
-            if line.startswith("frame.number"):
-                continue
+    try:
+        with fopen(conns) as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith("#"):
+                    filename = line.split()[1]
+                    continue
+                if line.startswith("frame.number"):
+                    continue
 
-            try:
-                fields = line.split(",")
-                [ i, ts,
-                  sip,spt_t,spt_u,
-                  dip,dpt_t,dpt_u,
-                  sz, flgs, host
-                ] = fields[:11]
-                url = ",".join(fields[11:])
-            except:
-                print(line, flush=True)
-                raise
+                try:
+                    fields = line.split(",")
+                    [ i, ts,
+                      sip,spt_t,spt_u,
+                      dip,dpt_t,dpt_u,
+                      sz, flgs, host
+                    ] = fields[:11]
+                    url = ",".join(fields[11:])
+                except:
+                    print(line, flush=True)
+                    raise
 
-            ts = float(ts)
-            sz = int(sz)
+                ts = float(ts)
+                sz = int(sz)
 
-            url = "%s/%s" % (host, url)
+                url = "%s/%s" % (host, url)
 
-            try: spt = int(spt_t + spt_u)
-            except ValueError: spt = 0
+                try: spt = int(spt_t + spt_u)
+                except ValueError: spt = 0
 
-            try: dpt = int(dpt_t + dpt_u)
-            except ValueError: dpt = 0
+                try: dpt = int(dpt_t + dpt_u)
+                except ValueError: dpt = 0
 
-            conn = (sip,spt, dip,dpt)
+                conn = (sip,spt, dip,dpt)
 
-            ## determine packet direction
-            outbound = sip.startswith("10.8")
+                ## determine packet direction
+                outbound = sip.startswith("10.8")
 
-            if sip.startswith("10.8") and dip.startswith("10.8"):
-                err("%s@%0.09f %s.%d > %s.%d [%d]" % (
-                    filename, ts, sip,spt, dip,dpt, sz))
+                if sip.startswith("10.8") and dip.startswith("10.8"):
+                    err("%s@%0.09f %s.%d > %s.%d [%d]" % (
+                        filename, ts, sip,spt, dip,dpt, sz))
 
-                ## wtf? packets to self made it up tunneL? brief examination of
-                ## traces up to 2014-11-19 indicate some (68B) are spotify
-                ## related (initial payload "SpotUdp") and others (56B) are
-                ## spurious ping replies. who knew...
-                if sip == dip and spt == dpt: continue
-                BARF
+                    ## wtf? packets to self made it up tunneL? brief examination
+                    ## of traces up to 2014-11-19 indicate some (68B) are
+                    ## spotify related (initial payload "SpotUdp") and others
+                    ## (56B) are spurious ping replies. who knew...
+                    if sip == dip and spt == dpt: continue
+                    BARF
 
-            if conn not in FLOWS: FLOWS[conn] = Flow(ts)
-            flow = FLOWS[conn]
+                if conn not in FLOWS: FLOWS[conn] = Flow(ts)
+                flow = FLOWS[conn]
 
-            diff = ts - FLOWS[conn].last
-            if diff < TIMEOUT:
-                flow.last = ts
-                flow.sz += sz
-                flow.pkts += 1
-                if url != "/":
-                    flow.urls.add(url)
-                if len(flgs) > 0:
-                    flow.flags |= int(flgs, 16)
+                diff = ts - FLOWS[conn].last
+                if diff < TIMEOUT:
+                    flow.last = ts
+                    flow.sz += sz
+                    flow.pkts += 1
+                    if url != "/":
+                        flow.urls.add(url)
+                    if len(flgs) > 0:
+                        flow.flags |= int(flgs, 16)
 
-            else:
-                print("%d\t%0.09f\t%0.09f\t%0.09f\t%s.%d\t%s.%d\t%d\t%d\t%s\t%s" % (
-                    N, flow.first, flow.last, flow.last-flow.first,
-                    sip,spt, dip,dpt, flow.pkts, flow.sz,
-                    flags_to_string(flow.flags),
-                    " ".join((u for u in flow.urls))))
+                else:
+                    print("%d\t%0.09f\t%0.09f\t%0.09f\t%s.%d\t%s.%d"
+                          "\t%d\t%d\t%s\t%s" % (
+                              N, flow.first, flow.last, flow.last-flow.first,
+                              sip,spt, dip,dpt, flow.pkts, flow.sz,
+                              flags_to_string(flow.flags),
+                              " ".join((u for u in flow.urls)))
+                    )
 
-                N += 1
-                del FLOWS[conn]
+                    N += 1
+                    del FLOWS[conn]
+
+    except KeyboardInterrupt: pass
+
+    for ((sip,spt, dip,dpt), flow) in FLOWS.items():
+        print("%d\t%0.09f\t%0.09f\t%0.09f\t%s.%d\t%s.%d\t%d\t%d\t%s\t%s" % (
+            N, flow.first, flow.last, flow.last-flow.first,
+            sip,spt, dip,dpt, flow.pkts, flow.sz,
+            flags_to_string(flow.flags),
+            " ".join((u for u in flow.urls))))
+
+        N += 1
