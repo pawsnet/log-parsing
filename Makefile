@@ -96,11 +96,11 @@ process-paws2-pcap-connections: # Extract conversation data
 	scp paws@paws-server:~/paws2-connections.txt data/paws2-pcap
 
 process-paws2-pcap-flows: # Convert conversations to flows
-	./flows.py data/paws2-pcap/paws2-connections.txt >| \
+	./extract-flows.py data/paws2-pcap/paws2-connections.txt >| \
 		data/paws2-pcap/paws2-flows.txt
 
 process-paws2-pcap-tag-flows: # Tag flows
-	./connection-tagging.py \
+	./tag-flows.py \
 		data/paws2-pcap/paws2-{names-tagged,names,flows}.txt >| \
 		data/paws2-pcap/paws2-flows-tagged.txt
 
