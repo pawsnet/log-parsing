@@ -99,6 +99,11 @@ process-paws2-pcap-flows: # Convert conversations to flows
 	./flows.py data/paws2-pcap/paws2-connections.txt >| \
 		data/paws2-pcap/paws2-flows.txt
 
+process-paws2-pcap-tag-flows: # Tag flows
+	./connection-tagging.py \
+		data/paws2-pcap/paws2-{names-tagged,names,flows}.txt >| \
+		data/paws2-pcap/paws2-flows-tagged.txt
+
 process-paws2-pcap-urls: # Extract HTTP URL data
 	$(SSHPAWS) -t \
 	   '$(RM) paws2-urls.txt; \

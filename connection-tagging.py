@@ -16,11 +16,11 @@
 
 import sys, bisect
 
-Tags = {}
-Names = {}
+TAGS = {}
+NAMES = {}
 
-def dbg(s):
-    print(s, file=sys.stderr)
+def err(s):
+    print(s, flush=True, file=sys.stderr)
 
 def fopen(f):
     if f == "-": return sys.stdin
@@ -29,42 +29,58 @@ def fopen(f):
 
 if __name__ == '__main__':
 
-    [tags, names, conns] = sys.argv[1:4]
+    [tags, names, flows] = sys.argv[1:4]
 
     with fopen(tags) as f:
         for line in f:
-            line = line.strip()
-            _, name, tags = line.split("|")
+            _, name, tags = line.strip().split("|")
+
             tags = tags.split(",")
-            Tags[name] = tags
+            name = name.strip()
+            if len(name) > 0:
+                TAGS[name] = set(
+                    tag.strip() for tag in tags if len(tag.strip()) > 0)
 
     with fopen(names) as f:
         for line in f:
             line = line.strip()
             if line.startswith("#"):
                 filename = line.split()[1]
-                print("# %s" % filename)
+                err("# %s" % filename)
                 continue
 
             ni, ts, ns, qip, qname, aname, aip = line.split(",")
 
-            if qip not in Names: Names[qip] = {}
-            if aip not in Names[qip]: Names[qip][aip] = set()
-            Names[qip][aip].add(qname)
-            Names[qip][aip].add(aname)
+            if qip not in NAMES: NAMES[qip] = {}
+            if aip not in NAMES[qip]: NAMES[qip][aip] = set()
+            NAMES[qip][aip].add(qname)
+            NAMES[qip][aip].add(aname)
 
-    with fopen(conns) as f:
+    with fopen(flows) as f:
         for line in f:
-            line = line.strip()
-            if line.startswith("#"):
-                filename = line.split()[1]
-                continue
-
             try:
-                fields = line.split(",")
-                [i, ts, sip,spt,_, dip,dpt,_, sz, flgs, host] = fields[:11]
-                url = ",".join(fields[11:])
+                fields = line.strip("\n").split("\t")
+                [ i, start,end,duration,
+                  src,dst, pkts,bytes, flags, urls ] = fields
             except:
-                print(line, flush=True)
+                err(line, flush=True)
                 raise
 
+            if src.startswith("10.8"):
+                qip = ".".join(src.split(".")[:4])
+                aip = ".".join(dst.split(".")[:4])
+            else:
+                aip = ".".join(src.split(".")[:4])
+                qip = ".".join(dst.split(".")[:4])
+
+            names = set()
+            tags = set()
+            if qip in NAMES:
+                if aip in NAMES[qip]:
+                    names = NAMES[qip][aip]
+
+            for n in names:
+                if n in TAGS: tags |= TAGS[n]
+
+            print("%s\t%s\t%s" % (
+                "\t".join(fields), ";".join(names), ";".join(tags)))
