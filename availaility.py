@@ -14,55 +14,30 @@
 # OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 # PERFORMANCE OF THIS SOFTWARE.
 
-import sys, time
-from datetime import datetime, timezone
-
-DIR = "data/paws2-uptimes"
-TIMEOUT = 600
+import sys
 
 if __name__ == '__main__':
 
-    if sys.argv[1] == "RAW":
-        filename = DIR+"/logdata.csv"
-        outputf = open(DIR+"/logdata.clean.csv", "w")
-        with open(filename) as f:
-            for line in [ l.strip() for l in f.readlines()[1:] ]:
-                (pawsid, _, ipaddr, observed) = line.split(",")
+    OBS = {}
+    TIMEOUT = 600
 
-                try:
-                    observed = datetime.strptime(observed, "%Y-%m-%d %H:%M:%S.%f")
-                    timestamp = observed.replace(tzinfo=timezone.utc).timestamp()
-                except ValueError:
-                    observed = datetime.strptime(observed, "%Y-%m-%d %H:%M:%S")
-                    timestamp = observed.replace(tzinfo=timezone.utc).timestamp()
+    filename = sys.argv[1]
+    with open(filename) as f:
+        for line in f:
+            if not line.startswith("OW"): continue
+            pawsid, ip, ts = map(lambda l: l.strip(), line.strip().split("|"))
 
-                print("%s, %s, %0.6f" % (pawsid, ipaddr, timestamp),
-                      file=outputf)
+            ts = float(ts)
 
-    elif sys.argv[1] == "COOKED":
-        ## after
-        ## $ sort -n -t" " -k 3 logdata.clean.csv > logdata.clean.sorted.csv
-        obs = {}
-        filename = DIR+"/logdata.clean.sorted.csv"
-        with open(filename) as f:
-            for line in [ l.strip() for l in f.readlines()[1:] ]:
-                (pawsid, ipaddr, timestamp) = line.split(",")
-                timestamp = float(timestamp)
-                now = timestamp
+            if pawsid not in OBS: OBS[pawsid] = [ts, ts]
+            ob = OBS[pawsid]
 
-                if pawsid not in obs: obs[pawsid] = [timestamp, timestamp]
-                ob = obs[pawsid]
-                gap = timestamp - ob[1]
-
-                if gap <= TIMEOUT:
-                    ob[1] = timestamp
-                    if ob[1]-ob[0] < 0:
-                        print(ob, line)
-                        BARF
-                elif gap > TIMEOUT:
-                    print("%s, %0.6f, %0.6f" % (pawsid, ob[0], ob[1]-ob[0]))
-                    obs[pawsid] = [timestamp, timestamp]
-
-            for pawsid in obs:
-                ob = obs[pawsid]
-                print("%s, %0.6f, %0.6f" % (pawsid, ob[0], ob[1]-ob[0]))
+            gap = ts - ob[1]
+            if gap > TIMEOUT:
+                print("%s, %0.0f, %0.0f" % (pawsid, ob[0], ob[1]-ob[0]))
+                del OBS[pawsid]
+            else:
+                ob[1] = ts
+                if ob[1] - ob[0] < 0:
+                    print("ERR: "+line)
+                    BARF
