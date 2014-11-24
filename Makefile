@@ -19,12 +19,19 @@ SHELL = /usr/bin/env bash
 SSH = ssh $(USER)@paws-server
 SSHPAWS = ssh paws@paws-server
 
-all: fetch process
+all: help
+clean:
+	$(RM) data/paws2-vpn/vpn-logins*.csv data/paws2-uptimes/uptimes.csv
+	$(RM) dns-tagging.js
 
-fetch: fetch-paws2-vpn
+paws2-vpn: paws2-vpn-fetch # PAWS2 citizen usage
+	./vpn-users.py $(VERBOSE) \
+	  data/paws2-vpn/messages-* data/paws2-vpn/messages \
+	  | sort -n -t "," -k 1,2 \
+	  >| data/paws2-vpn/vpn-logins$(VERBOSE).csv
 
-fetch-paws2-vpn: # Fetch PAWS2 VPN logs
-	mkdir -p data
+paws2-vpn-fetch: # Fetch PAWS2 VPN logs
+	mkdir -p data/paws2-vpn
 	$(SSH) -t \
 	  "sudo cp /var/log/messages* ~/ && sudo chown $(USER):$(USER) ~/messages*"
 	$(SSH) \
@@ -33,35 +40,27 @@ fetch-paws2-vpn: # Fetch PAWS2 VPN logs
 	$(SSH) \
 	  $(RM) ~/messages*
 
-process: process-paws2-vpn process-paws2-uptimes process-paws2-pcap
+paws2-uptimes: paws2-uptimes-fetch # PAWS2 router availability
+	./availaility.py data/paws2-uptimes/observations.txt \
+	  | sort -n -t "," -k 1,2 \
+	  >| data/paws2-uptimes/uptimes.csv
 
-process-paws1-selfsignups: # PAWS1 self-signups
-	egrep -h \
-	  '"GET /secure-cgi/(consent.cgi|su.cgi|vpn/instructions.cgi).*HTTP/1.1" 200'\
-	  data/paws1-signups/httpdlogs/ssl_access_log*  >| data/paws1-signups/ssl-accesses
-	egrep -h \
-	  'authentication failure for .* Password Mismatch'\
-	  data/paws1-signups/httpdlogs/ssl_error_log*  >| data/paws1-signups/ssl-errors
-	./self-signups.py $(VERBOSE) \
-	  data/paws1-signups/ssl-{accesses,errors}
+paws2-uptimes-fetch: # Fetch PAWS2 uptime observations
+	mkdir -p data/paws2-uptimes
+	$(SSH) -t \
+	  "$(RM) o o.bz2 \
+	  && psql -A -q -U paws -h 127.0.0.1 -p 5432 -d paws_mgmt -c \"SELECT id,ip,EXTRACT(epoch from date_trunc('second', date_seen)) FROM devices_log ORDER BY date_seen;\" > o \
+	  && bzip2 -v9 o"
+	scp mort@paws-server:~/o.bz2 data/paws2-uptimes/observations.txt.bz2
+	cd data/paws2-uptimes && $(RM) observations.txt && \
+	  bunzip2 -v observations.txt.bz2
+	$(SSH) -t "$(RM) ~/o.bz2"
 
-process-paws2-vpn: # PAWS2 citizen usage
-	./vpn-users.py $(VERBOSE) \
-	  data/paws2-vpn/messages-* data/paws2-vpn/messages | \
-	  sort -n -t "," -k 1,2 >| data/paws2-vpn/vpn-logins$(VERBOSE).csv
+paws2-pcap: \ # Process PCAP files, remotely
+	paws2-pcap-names paws2-pcap-tag-names \
+	paws2-pcap-flows paws2-pcap-tag-flows \
 
-process-paws2-uptimes: # PAWS2 router availability
-	 ./availaility.py RAW
-	sort -n -t" " -k 3 logdata.clean.csv >| \
-	  data/paws2-uptimes/logdata.clean.sorted.csv
-	./availaility.py COOKED >| data/paws2-uptimes/uptimes.csv
-
-process-paws2-pcap: # Process PCAP files, remotely \
-	process-paws2-pcap-names \
-	process-paws2-pcap-connections \
-	process-paws2-pcap-urls \
-
-process-paws2-pcap-names: # Extract URLs from PCAPs
+paws2-pcap-names: # Extract URLs from PCAPs
 	$(SSHPAWS) -t \
 	  '$(RM) paws2-names.txt;\
 		for pcap in $$(ls -1tr ~paws/tcpdump/tun0_*pcap*) ; do \
@@ -74,12 +73,12 @@ process-paws2-pcap-names: # Extract URLs from PCAPs
 	  done >> paws2-names.txt'
 	scp paws@paws-server:~/paws2-names.txt data/paws2-pcap
 
-process-paws2-pcap-tagging: # Tag extracted DNS names
+paws2-pcap-tag-names: # Tag extracted DNS names
 	grep -v "^#" data/paws2-pcap/paws2-names.txt |\
 		cut -d"," -f 5 | sort | uniq -c | sort -rn | tr -s " " |\
 		./dns-tagging.coffee >| data/paws2-pcap/paws2-names-tagged.txt
 
-process-paws2-pcap-connections: # Extract conversation data
+paws2-pcap-flows: # Convert conversations to flows
 	$(SSHPAWS) -t \
 	  '$(RM) paws-connections.txt;\
 		for pcap in $$(ls -1tr ~paws/tcpdump/tun0_*pcap*) ; do \
@@ -94,17 +93,15 @@ process-paws2-pcap-connections: # Extract conversation data
 		  -E header=y -E separator=, -E quote=n -E occurrence=f ;\
 	  done >> paws2-connections.txt'
 	scp paws@paws-server:~/paws2-connections.txt data/paws2-pcap
-
-process-paws2-pcap-flows: # Convert conversations to flows
 	./extract-flows.py data/paws2-pcap/paws2-connections.txt >| \
 		data/paws2-pcap/paws2-flows.txt
 
-process-paws2-pcap-tag-flows: # Tag flows
+paws2-pcap-tag-flows: # Tag flows
 	./tag-flows.py \
 		data/paws2-pcap/paws2-{names-tagged,names,flows}.txt >| \
 		data/paws2-pcap/paws2-flows-tagged.txt
 
-process-paws2-pcap-urls: # Extract HTTP URL data
+paws2-pcap-urls: # Extract HTTP URL data
 	$(SSHPAWS) -t \
 	   '$(RM) paws2-urls.txt; \
 		for pcap in $$(ls -1tr ~paws/tcpdump/tun0_*pcap*) ; do \
@@ -121,5 +118,12 @@ process-paws2-pcap-urls: # Extract HTTP URL data
 	  done >> paws2-urls.txt'
 	scp paws@paws-server:~/paws2-urls.txt data/paws2-pcap
 
-clean: # remove droppings
-	$(RM) data/paws2-vpn/vpn-logins*.csv data/paws2-uptimes/uptimes.csv
+paws1-selfsignups: # PAWS1 self-signups
+	egrep -h \
+	  '"GET /secure-cgi/(consent.cgi|su.cgi|vpn/instructions.cgi).*HTTP/1.1" 200'\
+	  data/paws1-signups/httpdlogs/ssl_access_log*  >| data/paws1-signups/ssl-accesses
+	egrep -h \
+	  'authentication failure for .* Password Mismatch'\
+	  data/paws1-signups/httpdlogs/ssl_error_log*  >| data/paws1-signups/ssl-errors
+	./self-signups.py $(VERBOSE) \
+	  data/paws1-signups/ssl-{accesses,errors}
