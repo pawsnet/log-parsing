@@ -29,6 +29,8 @@ paws2-vpn: paws2-vpn-fetch # PAWS2 citizen usage
 	  data/paws2-vpn/messages-* data/paws2-vpn/messages \
 	  | sort -n -t "," -k 1,2 \
 	  >| data/paws2-vpn/vpn-logins$(VERBOSE).csv
+	scp data/paws2-vpn/vpn-logins.csv mort@paws-server:~
+	$(SSH) -t "sudo mv vpn-logins.csv /var/www/secure-html/timeline"
 
 paws2-vpn-fetch: # Fetch PAWS2 VPN logs
 	mkdir -p data/paws2-vpn
@@ -44,6 +46,8 @@ paws2-uptimes: paws2-uptimes-fetch # PAWS2 router availability
 	./availaility.py data/paws2-uptimes/observations.txt \
 	  | sort -n -t "," -k 1,2 \
 	  >| data/paws2-uptimes/uptimes.csv
+	scp data/paws2-uptimes/uptimes.csv mort@paws-server:~
+	$(SSH) -t "sudo mv uptimes.csv /var/www/secure-html/timeline"
 
 paws2-uptimes-fetch: # Fetch PAWS2 uptime observations
 	mkdir -p data/paws2-uptimes
